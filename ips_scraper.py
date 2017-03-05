@@ -15,7 +15,7 @@ base_url = 'http://registrosanitario.ispch.gob.cl/'
 class TipoBusqueda(enum.Enum):
     condicion_venta = 'ctl00$ContentPlaceHolder1$chkTipoBusqueda$5'
     estado = 'ctl00$ContentPlaceHolder1$ddlEstado'
-    
+
 
 class CondicionVenta(enum.Enum):
     directa = 'Directa'
@@ -34,7 +34,8 @@ def send_request(url, cookie_jar=None, data=None):
     if data is None:
         data = {}
     response = ''
-    while not response:
+    i = 0
+    while not response or i > MAX_RETRY:
         try:
             session = requests.Session()
             if not cookie_jar:
@@ -48,6 +49,7 @@ def send_request(url, cookie_jar=None, data=None):
             sleep(randint(1,60))
             print("Reintentando")
             continue
+        i += 1
     return response, cookie_jar
 
 
@@ -71,10 +73,20 @@ def init_request_body(dom):
 
 
 def set_form_option(request_body, option):
-    request_body['__EVENTTARGET'] = option
     if option == TipoBusqueda.condicion_venta:
-        request_body[TipoBusqueda.condicion_venta] = 'on'
-        request_body[TipoBusqueda.estado] = Estado.suspendido
+        request_body['__EVENTTARGET'] = option.value
+        request_body[TipoBusqueda.condicion_venta.value] = 'on'
+    else:
+        request_body['__EVENTTARGET'] = ''
+
+    return request_body
+
+
+def set_form_param(request_body, option, param):
+    if option == TipoBusqueda.estado:
+        request_body[TipoBusqueda.estado.value] = param.value
+    else:
+        request_body['__EVENTARGUMENT'] = param.value
     return request_body
 
 
@@ -90,18 +102,19 @@ def main():
     request_body = init_request_body(dom)
 
     # Marcar checkboxes con opciones de búsqueda
+    request_body = set_form_param(request_body, TipoBusqueda.estado, Estado.suspendido)
     request_body = set_form_option(request_body, TipoBusqueda.condicion_venta)
 
     # Obtener el DOM actualizado con las opciones de búsqueda marcadas
     response, cookie_jar = send_request(base_url, cookie_jar=cookie_jar, data=request_body)
-    dom = BeautifulSoup(response.content, 'lxml')
+    dom2 = BeautifulSoup(response.content, 'lxml')
 
     # Obtener los nuevos campos del formulario
-    request_body = init_request_body(dom)
+    request_body = init_request_body(dom2)
 
     # Completar nuevos campos con los parámetros de búsqueda
     pass
 
     # Enviar la petición y obtener el DOM con los resultados
     response, cookie_jar = send_request(base_url, cookie_jar=cookie_jar, data=request_body)
-    dom = BeautifulSoup(response.content, 'lxml')
+    dom3 = BeautifulSoup(response.content, 'lxml')
