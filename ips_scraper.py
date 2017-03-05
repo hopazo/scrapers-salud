@@ -6,13 +6,16 @@ from random import randint
 from time import sleep
 
 sleep(randint(10,100))
-CONDICION_DE_VENTA = 'ctl00$ContentPlaceHolder1$chkTipoBusqueda$5'
-VENTA_DIRECTA = 'Directa'
 MAX_RETRY = 3
 
-#URL Base
+# URL Base
 base_url = 'http://registrosanitario.ispch.gob.cl/'
 
+
+class TipoBusqueda(enum.Enum):
+    condicion_venta = 'ctl00$ContentPlaceHolder1$chkTipoBusqueda$5'
+    estado = 'ctl00$ContentPlaceHolder1$ddlEstado'
+    
 
 class CondicionVenta(enum.Enum):
     directa = 'Directa'
@@ -67,10 +70,12 @@ def init_request_body(dom):
     return request_body
 
 
-def set_form_options(request_body, option, value):
-    request_body[option] = value
-    if option == CONDICION_DE_VENTA:
-        request_body[CONDICION_DE_VENTA] = 'on'
+def set_form_option(request_body, option):
+    request_body['__EVENTTARGET'] = option
+    if option == TipoBusqueda.condicion_venta:
+        request_body[TipoBusqueda.condicion_venta] = 'on'
+        request_body[TipoBusqueda.estado] = Estado.suspendido
+    return request_body
 
 
 def main():
@@ -85,9 +90,7 @@ def main():
     request_body = init_request_body(dom)
 
     # Marcar checkboxes con opciones de búsqueda
-    form_data['__EVENTTARGET'] = 'ctl00$ContentPlaceHolder1$chkTipoBusqueda$5'
-    form_data['ctl00$ContentPlaceHolder1$chkTipoBusqueda$5'] = 'on'
-    form_data['ctl00$ContentPlaceHolder1$ddlEstado'] = 'Suspendido'
+    request_body = set_form_option(request_body, TipoBusqueda.condicion_venta)
 
     # Obtener el DOM actualizado con las opciones de búsqueda marcadas
     response, cookie_jar = send_request(base_url, cookie_jar=cookie_jar, data=request_body)
