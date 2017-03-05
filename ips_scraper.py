@@ -45,7 +45,7 @@ def init_request_body(dom):
         '__VIEWSTATEENCRYPTED',
         '__EVENTVALIDATION',
     ]
-    request_body = {key: dom.find(key) if dom.find(key) else '' for key in args}
+    request_body = {key: dom.find(id=key) if dom.find(key) else '' for key in args}
 
     previous_page = dom.find(id='__PREVIOUSPAGE')
     if previous_page:
@@ -67,4 +67,6 @@ def main():
         return
     dom = BeautifulSoup(response.content, 'lxml')
     request_body = init_request_body(dom)
-    print(request_body)
+    response, cookie_jar = send_request(base_url, cookie_jar=cookie_jar, data=request_body)
+    dom = BeautifulSoup(response.content, 'lxml')
+    print(dom)
