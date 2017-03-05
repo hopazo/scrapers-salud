@@ -45,7 +45,7 @@ def init_request_body(dom):
         '__VIEWSTATEENCRYPTED',
         '__EVENTVALIDATION',
     ]
-    request_body = {key: dom.find(id=key) if dom.find(key) else '' for key in args}
+    request_body = {key: dom.find(id=key) if dom.find(id=key) else '' for key in args}
 
     previous_page = dom.find(id='__PREVIOUSPAGE')
     if previous_page:
@@ -60,13 +60,29 @@ def set_form_options(request_body, option, value):
 
 
 def main():
-    # Acceder a la url base
+    # Acceder a la url base y obtener el DOM
     response, cookie_jar = send_request(base_url)
     if not response:
         print("El servidor no responde")
         return
     dom = BeautifulSoup(response.content, 'lxml')
+
+    # Obtener valores necesarios para enviar el formulario
     request_body = init_request_body(dom)
+
+    # Marcar checkboxes con opciones de búsqueda
+    pass
+
+    # Obtener el DOM actualizado con las opciones de búsqueda marcadas
     response, cookie_jar = send_request(base_url, cookie_jar=cookie_jar, data=request_body)
     dom = BeautifulSoup(response.content, 'lxml')
-    print(dom)
+
+    # Obtener los nuevos campos del formulario
+    request_body = init_request_body(dom)
+
+    # Completar nuevos campos con los parámetros de búsqueda
+    pass
+
+    # Enviar la petición y obtener el DOM con los resultados
+    response, cookie_jar = send_request(base_url, cookie_jar=cookie_jar, data=request_body)
+    dom = BeautifulSoup(response.content, 'lxml')
