@@ -71,7 +71,9 @@ def main():
     request_body = init_request_body(dom)
 
     # Marcar checkboxes con opciones de búsqueda
-    pass
+    form_data['__EVENTTARGET'] = 'ctl00$ContentPlaceHolder1$chkTipoBusqueda$5'
+    form_data['ctl00$ContentPlaceHolder1$chkTipoBusqueda$5'] = 'on'
+    form_data['ctl00$ContentPlaceHolder1$ddlEstado'] = 'Suspendido'
 
     # Obtener el DOM actualizado con las opciones de búsqueda marcadas
     response, cookie_jar = send_request(base_url, cookie_jar=cookie_jar, data=request_body)
