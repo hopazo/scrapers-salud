@@ -14,6 +14,7 @@ base_url = 'http://registrosanitario.ispch.gob.cl/'
 class TipoBusqueda(enum.Enum):
     condicion_venta = 'ctl00$ContentPlaceHolder1$chkTipoBusqueda$5'
 
+
 class Placeholders(enum.Enum):
     condicion = 'ctl00$ContentPlaceHolder1$ddlCondicion'
     estado = 'ctl00$ContentPlaceHolder1$ddlEstado'
@@ -55,7 +56,10 @@ def send_request(url, cookie_jar=None, data=None):
     return response, cookie_jar
 
 
-def init_request_body(dom):
+def init_request_body(dom, request_body=None):
+    if not request_body:
+        request_body = {}
+        
     args = [
         'ctl00_ContentPlaceHolder1_ScriptManager1_HiddenField',
         '__EVENTTARGET',
@@ -66,11 +70,11 @@ def init_request_body(dom):
         '__VIEWSTATEENCRYPTED',
         '__EVENTVALIDATION',
     ]
-    request_body = {key: dom.find(id=key)['value'] if dom.find(id=key) else '' for key in args}
-
+    new_body = {key: dom.find(id=key)['value'] if dom.find(id=key) else '' for key in args}
     previous_page = dom.find(id='__PREVIOUSPAGE')
     if previous_page:
-        request_body['__PREVIOUSPAGE'] = previous_page
+        new_body['__PREVIOUSPAGE'] = previous_page
+    request_body.update((k, new_body[k]) for k in new_body.keys())
     return request_body
 
 
@@ -106,7 +110,6 @@ def main():
     request_body = init_request_body(dom)
 
     # Marcar checkboxes con opciones de búsqueda
-    request_body = set_form_param(request_body, Placeholders.estado, Estado.suspendido)
     request_body = set_form_option(request_body, TipoBusqueda.condicion_venta)
 
     # Obtener el DOM actualizado con las opciones de búsqueda marcadas
@@ -116,8 +119,10 @@ def main():
     # Obtener los nuevos campos del formulario
     request_body = init_request_body(dom2)
 
-    # Completar nuevos campos con los parámetros de búsqueda
-    request_body = set_form_param(request_body, TipoBusqueda.condicion_venta, CondicionVenta.receta_cheque)
+    # Completar campos con los parámetros de búsqueda
+    request_body = set_form_param(request_body, Placeholders.estado, Estado.suspendido)
+    request_body = set_form_param(request_body, Placeholders.condicion, CondicionVenta.receta_cheque)
+    request_body['ctl00$ContentPlaceHolder1$btnBuscar'] = 'Buscar'
 
     # Enviar la petición y obtener el DOM con los resultados
     response, cookie_jar = send_request(base_url, cookie_jar=cookie_jar, data=request_body)
