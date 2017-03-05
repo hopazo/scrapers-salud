@@ -1,3 +1,4 @@
+import enum
 import requests
 
 from bs4 import BeautifulSoup
@@ -11,6 +12,19 @@ MAX_RETRY = 3
 
 #URL Base
 base_url = 'http://registrosanitario.ispch.gob.cl/'
+
+
+class CondicionVenta(enum.Enum):
+    directa = 'Directa'
+    receta_medica = 'Receta Médica'
+    receta_retenida = 'Receta Médica Retenida'
+    receta_cheque = 'Receta Cheque'
+
+
+class Estado(enum.Enum):
+    vigente = 'Si'
+    no_vigente = 'No'
+    suspendido = 'Suspendido'
 
 
 def send_request(url, cookie_jar=None, data=None):
