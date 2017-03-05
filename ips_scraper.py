@@ -1,17 +1,17 @@
 import requests
 
+from bs4 import BeautifulSoup
 from random import randint
 from time import sleep
 
-sleep(randint(10,100))
 MAX_RETRY = 3
 #URL Base
 base_url = 'http://registrosanitario.ispch.gob.cl/'
 
-def connect(url, cookie_jar, data=None):
+def send_request(url, cookie_jar, data=None):
     if data is None: data = {}
     response = ''
-    while len(response) == 0:
+    while not response:
         try:
             session = requests.Session()
             if not cookie_jar:
@@ -19,15 +19,17 @@ def connect(url, cookie_jar, data=None):
                 cookie_jar = session.cookies.get_dict()
 
             request = requests.Request('POST', url, data=data, cookies=cookie_jar)
-            prepped = request.prepare()  # Prepara el request
-            response = session.send(prepped)
+            response = session.send(request.prepare())
         except:
             print("Conexion rechazada por el servidor.")
             sleep(randint(1,60))
             print("Reintentando")
             continue
+    return response, cookie_jar
 
-    return response
 
 def main():
-    pass
+    response, cookie_jar = send_request(base_url)
+    if not response:
+        print("El servidor no responde")
+        return
