@@ -32,6 +32,33 @@ def send_request(url, cookie_jar, data=None):
     return response, cookie_jar
 
 
+def init_request_body(dom):
+    ctl00 = dom.find(id='ctl00_ContentPlaceHolder1_ScriptManager1_HiddenField')
+    __EVENTTARGET = dom.find(id='__EVENTTARGET')
+    __EVENTARGUMENT = dom.find(id='__EVENTARGUMENT')
+    __LASTFOCUS = dom.find(id='__LASTFOCUS')
+    __VIEWSTATE = dom.find(id='__VIEWSTATE')
+    __VIEWSTATEGENERATOR = dom.find(id='__VIEWSTATEGENERATOR')
+    __VIEWSTATEENCRYPTED = dom.find(id='__VIEWSTATEENCRYPTED')
+    __PREVIOUSPAGE = dom.find(id='__PREVIOUSPAGE')
+    __EVENTVALIDATION = dom.find(id='__EVENTVALIDATION')
+
+    request_body = {
+        'ctl00_ContentPlaceHolder1_ScriptManager1_HiddenField': ctl00,
+        '__EVENTTARGET': __EVENTTARGET,
+        '__EVENTARGUMENT': __EVENTARGUMENT,
+        '__LASTFOCUS': __LASTFOCUS,
+        '__VIEWSTATE': __VIEWSTATE,
+        '__VIEWSTATEGENERATOR': __VIEWSTATEGENERATOR,
+        '__VIEWSTATEENCRYPTED': __VIEWSTATEENCRYPTED,
+        '__EVENTVALIDATION': __EVENTVALIDATION
+    }
+
+    if __PREVIOUSPAGE != '':
+        request_body['__PREVIOUSPAGE'] = __PREVIOUSPAGE
+    return request_body
+
+
 def set_form_options(request_body, option, value):
     request_body[option] = value
     if option == CONDICION_DE_VENTA:
@@ -39,10 +66,9 @@ def set_form_options(request_body, option, value):
 
 
 def main():
-    request_body = {}
     response, cookie_jar = send_request(base_url)
     if not response:
         print("El servidor no responde")
         return
+    request_body = init_request_body(response)
     request_body = set_form_options(request_body, CONDICION_DE_VENTA, VENTA_DIRECTA)
-
