@@ -13,7 +13,7 @@ MAX_RETRY = 3
 base_url = 'http://registrosanitario.ispch.gob.cl/'
 
 
-def send_request(url, cookie_jar, data=None):
+def send_request(url, cookie_jar=None, data=None):
     if data is None:
         data = {}
     response = ''
@@ -60,9 +60,11 @@ def set_form_options(request_body, option, value):
 
 
 def main():
+    # Acceder a la url base
     response, cookie_jar = send_request(base_url)
     if not response:
         print("El servidor no responde")
         return
-    request_body = init_request_body(response)
+    dom = BeautifulSoup(response.content, 'lxml')
+    request_body = init_request_body(dom)
     print(request_body)
