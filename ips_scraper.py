@@ -59,7 +59,7 @@ def send_request(url, cookie_jar=None, data=None):
 def init_request_body(dom, request_body=None):
     if not request_body:
         request_body = {}
-        
+
     args = [
         'ctl00_ContentPlaceHolder1_ScriptManager1_HiddenField',
         '__EVENTTARGET',
@@ -85,8 +85,6 @@ def set_form_option(request_body, option):
     else:
         request_body['__EVENTTARGET'] = ''
 
-    return request_body
-
 
 def set_form_param(request_body, option, param):
     if option == Placeholders.estado:
@@ -95,7 +93,6 @@ def set_form_param(request_body, option, param):
         request_body[Placeholders.condicion.value] = param.value
     else:
         request_body['__EVENTARGUMENT'] = param.value
-    return request_body
 
 
 def main():
@@ -110,20 +107,21 @@ def main():
     request_body = init_request_body(dom)
 
     # Marcar checkboxes con opciones de búsqueda
-    request_body = set_form_option(request_body, TipoBusqueda.condicion_venta)
+    set_form_option(request_body, TipoBusqueda.condicion_venta)
 
     # Obtener el DOM actualizado con las opciones de búsqueda marcadas
     response, cookie_jar = send_request(base_url, cookie_jar=cookie_jar, data=request_body)
-    dom2 = BeautifulSoup(response.content, 'lxml')
+    dom = BeautifulSoup(response.content, 'lxml')
 
     # Obtener los nuevos campos del formulario
-    request_body = init_request_body(dom2)
+    init_request_body(dom, request_body)
 
     # Completar campos con los parámetros de búsqueda
-    request_body = set_form_param(request_body, Placeholders.estado, Estado.suspendido)
-    request_body = set_form_param(request_body, Placeholders.condicion, CondicionVenta.receta_cheque)
+    set_form_param(request_body, Placeholders.estado, Estado.suspendido)
+    set_form_param(request_body, Placeholders.condicion, CondicionVenta.receta_cheque)
     request_body['ctl00$ContentPlaceHolder1$btnBuscar'] = 'Buscar'
 
     # Enviar la petición y obtener el DOM con los resultados
     response, cookie_jar = send_request(base_url, cookie_jar=cookie_jar, data=request_body)
-    dom3 = BeautifulSoup(response.content, 'lxml')
+    dom = BeautifulSoup(response.content, 'lxml')
+    dom.find('table', id='ctl00_ContentPlaceHolder1_gvDatosBusqueda')
