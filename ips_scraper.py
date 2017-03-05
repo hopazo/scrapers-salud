@@ -12,8 +12,10 @@ MAX_RETRY = 3
 #URL Base
 base_url = 'http://registrosanitario.ispch.gob.cl/'
 
+
 def send_request(url, cookie_jar, data=None):
-    if data is None: data = {}
+    if data is None:
+        data = {}
     response = ''
     while not response:
         try:
@@ -33,29 +35,21 @@ def send_request(url, cookie_jar, data=None):
 
 
 def init_request_body(dom):
-    ctl00 = dom.find(id='ctl00_ContentPlaceHolder1_ScriptManager1_HiddenField')
-    __EVENTTARGET = dom.find(id='__EVENTTARGET')
-    __EVENTARGUMENT = dom.find(id='__EVENTARGUMENT')
-    __LASTFOCUS = dom.find(id='__LASTFOCUS')
-    __VIEWSTATE = dom.find(id='__VIEWSTATE')
-    __VIEWSTATEGENERATOR = dom.find(id='__VIEWSTATEGENERATOR')
-    __VIEWSTATEENCRYPTED = dom.find(id='__VIEWSTATEENCRYPTED')
-    __PREVIOUSPAGE = dom.find(id='__PREVIOUSPAGE')
-    __EVENTVALIDATION = dom.find(id='__EVENTVALIDATION')
+    args = [
+        'ctl00_ContentPlaceHolder1_ScriptManager1_HiddenField',
+        '__EVENTTARGET',
+        '__EVENTARGUMENT',
+        '__LASTFOCUS',
+        '__VIEWSTATE',
+        '__VIEWSTATEGENERATOR',
+        '__VIEWSTATEENCRYPTED',
+        '__EVENTVALIDATION',
+    ]
+    request_body = {key: dom.find(key) if dom.find(key) else '' for key in args}
 
-    request_body = {
-        'ctl00_ContentPlaceHolder1_ScriptManager1_HiddenField': ctl00,
-        '__EVENTTARGET': __EVENTTARGET,
-        '__EVENTARGUMENT': __EVENTARGUMENT,
-        '__LASTFOCUS': __LASTFOCUS,
-        '__VIEWSTATE': __VIEWSTATE,
-        '__VIEWSTATEGENERATOR': __VIEWSTATEGENERATOR,
-        '__VIEWSTATEENCRYPTED': __VIEWSTATEENCRYPTED,
-        '__EVENTVALIDATION': __EVENTVALIDATION
-    }
-
-    if __PREVIOUSPAGE != '':
-        request_body['__PREVIOUSPAGE'] = __PREVIOUSPAGE
+    previous_page = dom.find(id='__PREVIOUSPAGE')
+    if previous_page:
+        request_body['__PREVIOUSPAGE'] = previous_page
     return request_body
 
 
@@ -71,4 +65,4 @@ def main():
         print("El servidor no responde")
         return
     request_body = init_request_body(response)
-    request_body = set_form_options(request_body, CONDICION_DE_VENTA, VENTA_DIRECTA)
+    print(request_body)
