@@ -5,7 +5,6 @@ from bs4 import BeautifulSoup
 from random import randint
 from time import sleep
 
-sleep(randint(10,100))
 MAX_RETRY = 3
 
 # URL Base
@@ -34,8 +33,8 @@ def send_request(url, cookie_jar=None, data=None):
     if data is None:
         data = {}
     response = ''
-    i = 0
-    while not response or i > MAX_RETRY:
+    i = 1
+    while not response and i < MAX_RETRY:
         try:
             session = requests.Session()
             if not cookie_jar:
