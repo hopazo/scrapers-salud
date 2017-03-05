@@ -1,5 +1,9 @@
 import requests
 
+from random import randint
+from time import sleep
+
+sleep(randint(10,100))
 MAX_RETRY = 3
 #URL Base
 base_url = 'http://registrosanitario.ispch.gob.cl/'
@@ -18,9 +22,9 @@ def connect(url, cookie_jar, data=None):
             prepped = request.prepare()  # Prepara el request
             response = session.send(prepped)
         except:
-            print("Conexion rechazada por el servidor. Tiempo de espera, 60s")
-            time.sleep(60)
-            print("Fin tiempo de espera")
+            print("Conexion rechazada por el servidor.")
+            sleep(randint(1,60))
+            print("Reintentando")
             continue
 
     return response
