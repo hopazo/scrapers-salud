@@ -18,6 +18,8 @@ class TipoBusqueda(enum.Enum):
 class Placeholders(enum.Enum):
     condicion = 'ctl00$ContentPlaceHolder1$ddlCondicion'
     estado = 'ctl00$ContentPlaceHolder1$ddlEstado'
+    datos_busqueda = 'ctl00$ContentPlaceHolder1$gvDatosBusqueda'
+    buscar = 'ctl00$ContentPlaceHolder1$btnBuscar'
 
 
 class CondicionVenta(enum.Enum):
@@ -91,6 +93,9 @@ def set_form_param(request_body, option, param):
         request_body[Placeholders.estado.value] = param.value
     elif option == Placeholders.condicion:
         request_body[Placeholders.condicion.value] = param.value
+    elif option == Placeholders.datos_busqueda:
+        request_body['__EVENTTARGET'] = Placeholders.datos_busqueda.value
+        request_body['__EVENTARGUMENT'] = param.value
     else:
         request_body['__EVENTARGUMENT'] = param.value
 
@@ -117,13 +122,17 @@ def main():
     init_request_body(dom, request_body)
 
     # Completar campos con los parámetros de búsqueda
-    set_form_param(request_body, Placeholders.estado, Estado.vigente)
+    set_form_param(request_body, Placeholders.estado, Estado.no_vigente)
     set_form_param(request_body, Placeholders.condicion, CondicionVenta.receta_cheque)
-    request_body['ctl00$ContentPlaceHolder1$btnBuscar'] = 'Buscar'
+    request_body[Placeholders.buscar.value] = 'Buscar'
 
     # Enviar la petición y obtener el DOM con los resultados
     response, cookie_jar = send_request(base_url, cookie_jar=cookie_jar, data=request_body)
     dom = BeautifulSoup(response.content, 'lxml')
     pagination_footer = dom.find(id='ctl00_ContentPlaceHolder1_gvDatosBusqueda').find('td', attrs={'colspan': 7})
     pages_count = len(pagination_footer.find_all('td')) if pagination_footer else 1
-    print(pages_count)
+
+
+    # Cambiar página
+    page_number = 'Page$' + str(pages_count)
+    set_form_param(request_body, Placeholders.datos_busqueda, page_number)
