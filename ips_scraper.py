@@ -28,7 +28,7 @@ class CondicionVenta(enum.Enum):
 
 
 class Estado(enum.Enum):
-    vigente = 'Si'
+    vigente = 'Sí'
     no_vigente = 'No'
     suspendido = 'Suspendido'
 
@@ -117,11 +117,13 @@ def main():
     init_request_body(dom, request_body)
 
     # Completar campos con los parámetros de búsqueda
-    set_form_param(request_body, Placeholders.estado, Estado.suspendido)
+    set_form_param(request_body, Placeholders.estado, Estado.vigente)
     set_form_param(request_body, Placeholders.condicion, CondicionVenta.receta_cheque)
     request_body['ctl00$ContentPlaceHolder1$btnBuscar'] = 'Buscar'
 
     # Enviar la petición y obtener el DOM con los resultados
     response, cookie_jar = send_request(base_url, cookie_jar=cookie_jar, data=request_body)
     dom = BeautifulSoup(response.content, 'lxml')
-    dom.find('table', id='ctl00_ContentPlaceHolder1_gvDatosBusqueda')
+    pagination_footer = dom.find(id='ctl00_ContentPlaceHolder1_gvDatosBusqueda').find('td', attrs={'colspan': 7})
+    pages_count = len(pagination_footer.find_all('td')) if pagination_footer else 1
+    print(pages_count)
