@@ -292,15 +292,29 @@ class IspParser(PageParser, Thread):
                 self.tasks.task_done()
 
 
-def main():
-    start = time.time()
-    max_threads = 12
-    thread = IspParser(sale_terms=CondicionVenta.receta_retenida, status=Estado.vigente)
+def main(condicion_venta, estado, threads):
+
+    try:
+        condicion_venta = condicion_venta.replace('-','_')
+        estado = estado.replace('-', '_')
+        condicion_venta = CondicionVenta[condicion_venta]
+        estado = Estado[estado]
+        threads = int(threads)
+        print('Parámetros de búsqueda')
+        print('Venta : {0}'.format(condicion_venta.value))
+        print('Vigente: {0}'.format(estado.value))
+    except KeyError:
+        print('No fue posible determinar la condicion de venta o estado de medicamentos a procesar')
+        exit(1)
+    except ValueError:
+        print('No se proporcionó un número de hilos de ejecución válido')
+        exit(1)
+
+    max_threads = threads
+    thread = IspParser(sale_terms=condicion_venta, status=estado)
     max_pages = thread.pages_count
 
     pool = ThreadPool(max_threads)
     for i in range(1, max_pages + 1):
         pool.add_task({'sale_terms': CondicionVenta.receta_cheque, 'status': Estado.vigente, 'page_number': i})
     pool.wait_completion()
-    end = time.time()
-    print(end - start)
