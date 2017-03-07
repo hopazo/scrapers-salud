@@ -1,11 +1,11 @@
 import enum
+from threading import Thread
+
 import requests
 
 from bs4 import BeautifulSoup
 from random import randint
 from time import sleep
-
-MAX_RETRY = 3
 
 # URL Base
 base_url = 'http://registrosanitario.ispch.gob.cl/'
@@ -35,8 +35,9 @@ class Estado(enum.Enum):
     suspendido = 'Suspendido'
 
 
-class Thread:
+class IspParser(Thread):
     def __init__(self, sale_terms, status, page_number=1, max_retry=3):
+        Thread.__init__(self)
         self.sale_terms = sale_terms
         self.status = status
         self.page_number = page_number
@@ -103,7 +104,7 @@ class Thread:
             new_body['__PREVIOUSPAGE'] = previous_page
         self.request_body.update((k, new_body[k]) for k in new_body.keys())
 
-    def connect(self):
+    def _connect(self):
         # Acceder a la url base y obtener el DOM
         self._request()
         self.dom = BeautifulSoup(self.current_page.content, 'lxml')
@@ -131,7 +132,6 @@ class Thread:
         self.dom = BeautifulSoup(self.current_page.content, 'lxml')
 
     def go_to_page(self, page_number):
-        self.connect()
         # Cambiar página
         page_number = 'Page$' + str(page_number)
         self._set_form_param(Placeholders.datos_busqueda, page_number)
@@ -140,15 +140,41 @@ class Thread:
 
     @property
     def pages_count(self):
-        self.connect()
+        self._connect()
         pagination_footer = self.dom.find(id='ctl00_ContentPlaceHolder1_gvDatosBusqueda').find('td', attrs={'colspan': 7})
         count = len(pagination_footer.find_all('td')) if pagination_footer else 1
         return count
 
     def process_page(self):
+        sleep(100)
         pass
+
+    def run(self):
+        print('Running page (%s)...this may take several minutes. Please be patient' % self.page_number)
+        self._connect()
+        if self.page_number != 1:
+            self.go_to_page(self.page_number)
+        self.process_page()
+        print('Complete (%s)' % self.page_number)
+        return
 
 
 def main():
-    thread = Thread(sale_terms=CondicionVenta.receta_cheque, status=Estado.vigente)
-    thread.pages_count
+    max_threads = 4
+    threads = []
+    thread = IspParser(sale_terms=CondicionVenta.receta_cheque, status=Estado.vigente)
+    max_pages = thread.pages_count
+
+    if max_pages == 1:
+        thread.start()
+        threads.append(thread)
+
+    i = 1
+    while i < max_pages:
+        if len(threads) < max_threads:
+            i += 1
+            thread = IspParser(sale_terms=CondicionVenta.receta_cheque, status=Estado.vigente, page_number=i)
+            thread.start()
+            threads.append(thread)
+    for thread in threads:
+        thread.join()
