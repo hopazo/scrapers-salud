@@ -1,10 +1,10 @@
 import enum
-from threading import Thread
-
 import requests
 
 from bs4 import BeautifulSoup
 from random import randint
+from queue import Queue
+from threading import Thread
 from time import sleep
 
 # URL Base
@@ -36,7 +36,7 @@ class Estado(enum.Enum):
 
 
 class IspParser(Thread):
-    def __init__(self, sale_terms, status, page_number=1, max_retry=3):
+    def __init__(self, sale_terms, status, page_number=1, max_retry=3, tasks=None):
         Thread.__init__(self)
         self.sale_terms = sale_terms
         self.status = status
@@ -47,6 +47,13 @@ class IspParser(Thread):
         self.current_page = None
         self.dom = None
         self.url = 'http://registrosanitario.ispch.gob.cl/'
+        self.tasks = tasks
+
+    @classmethod
+    def from_queue(cls, tasks):
+        thread = cls(sale_terms=None, status=None, page_number=None, tasks=tasks)
+        thread.start()
+        return thread
 
     def _request(self):
         self.current_page = ''
@@ -146,35 +153,48 @@ class IspParser(Thread):
         return count
 
     def process_page(self):
-        sleep(100)
+        sleep(2)
         pass
 
     def run(self):
-        print('Running page (%s)...this may take several minutes. Please be patient' % self.page_number)
-        self._connect()
-        if self.page_number != 1:
-            self.go_to_page(self.page_number)
-        self.process_page()
-        print('Complete (%s)' % self.page_number)
-        return
+        while True:
+            task = self.tasks.get()
+            self.page_number = task['page_number']
+            self.sale_terms = task['sale_terms']
+            self.status = task['status']
+            print('Running page (%s)...this may take several minutes. Please be patient' % self.page_number)
+            self._connect()
+            if self.page_number != 1:
+                self.go_to_page(self.page_number)
+            self.process_page()
+            print('Complete (%s)' % self.page_number)
+            if self.tasks:
+                self.tasks.task_done()
+            return
 
 
 def main():
     max_threads = 4
-    threads = []
     thread = IspParser(sale_terms=CondicionVenta.receta_cheque, status=Estado.vigente)
     max_pages = thread.pages_count
 
-    if max_pages == 1:
-        thread.start()
-        threads.append(thread)
+    pool = ThreadPool(max_threads)
+    for i in range(2, max_pages):
+        pool.add_task({'sale_terms': CondicionVenta.receta_cheque, 'status': Estado.vigente, 'page_number': i})
+    pool.wait_completion()
 
-    i = 1
-    while i < max_pages:
-        if len(threads) < max_threads:
-            i += 1
-            thread = IspParser(sale_terms=CondicionVenta.receta_cheque, status=Estado.vigente, page_number=i)
-            thread.start()
-            threads.append(thread)
-    for thread in threads:
-        thread.join()
+
+class ThreadPool:
+    """ Pool of threads consuming tasks from a queue """
+    def __init__(self, num_threads):
+        self.tasks = Queue(num_threads)
+        for _ in range(num_threads):
+            IspParser.from_queue(tasks=self.tasks)
+
+    def add_task(self, task):
+        """ Add a task to the queue """
+        self.tasks.put(task)
+
+    def wait_completion(self):
+        """ Wait for completion of all the tasks in the queue """
+        self.tasks.join()
