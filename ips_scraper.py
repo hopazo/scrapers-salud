@@ -1,11 +1,11 @@
 import enum
 import requests
+import time
 
 from bs4 import BeautifulSoup
 from random import randint
 from queue import Queue
 from threading import Thread
-from time import sleep
 
 base_url = 'http://registrosanitario.ispch.gob.cl/'
 url_ficha = 'http://registrosanitario.ispch.gob.cl/Ficha.aspx?RegistroISP='
@@ -54,6 +54,7 @@ class Estado(enum.Enum):
 
 class ThreadPool:
     """ Pool of threads consuming tasks from a queue """
+
     def __init__(self, num_threads):
         self.tasks = Queue(num_threads)
         for _ in range(num_threads):
@@ -68,26 +69,15 @@ class ThreadPool:
         self.tasks.join()
 
 
-class IspParser(Thread):
-    def __init__(self, sale_terms, status, page_number=1, max_retry=3, tasks=None):
-        Thread.__init__(self)
-        self.daemon = True
-        self.sale_terms = sale_terms
-        self.status = status
-        self.page_number = page_number
+class PageParser:
+    def __init__(self, url, max_retry=3, max_wait_timeout=10):
+        self.url = url
         self.cookie_jar = None
         self.request_body = {}
         self.max_retry = max_retry
         self.current_page = None
         self.dom = None
-        self.url = base_url
-        self.tasks = tasks
-
-    @classmethod
-    def from_queue(cls, tasks):
-        thread = cls(sale_terms=None, status=None, page_number=None, tasks=tasks)
-        thread.start()
-        return thread
+        self.max_wait_timeout = max_wait_timeout
 
     def _request(self):
         self.current_page = None
@@ -105,12 +95,80 @@ class IspParser(Thread):
                 self.current_page = session.send(request.prepare())
             except requests.exceptions.RequestException as e:
                 last_exception = e
-                sleep(randint(1, 60))
+                time.sleep(randint(1, self.max_wait_timeout))
                 continue
             i += 1
         if not self.current_page:
             raise last_exception
         self.dom = BeautifulSoup(self.current_page.content, 'lxml')
+
+
+class FichaProductoParser(PageParser):
+    def __init__(self, product_id):
+        PageParser.__init__(self, url=url_ficha + product_id)
+
+    def product(self):
+        self._request()
+        product = self._get_product_description()
+        # product['packing'] = self._get_packaging()
+        # product['companies'] = self._get_companies()
+        product['formula'] = self._get_formula()
+        return product
+
+    def _get_product_description(self):
+        return {k.name: self.dom.find(id=k.value).string for k in FichaProducto if self.dom.find(id=k.value)}
+
+    def _get_packaging(self):
+        """
+        Obtener información de envasado de un producto
+        :return:
+        """
+        pass
+
+    def _get_companies(self):
+        """
+        Obtener información de empresas realacionadas a un producto
+        :return:
+        """
+        pass
+
+    def _get_formula(self):
+        """
+        Obtener formula (principios activos y concentración), de un producto
+        :return:
+        """
+        formulas = []
+        trs = self.dom.find(id='ctl00_ContentPlaceHolder1_gvFormulas').find_all('tr')
+        for tr in trs:
+            # Se asegura de conseguir las filas que sean de formulas
+            td = tr.find_all('td', class_='tdsimple')
+            if len(td) != 4:
+                continue
+            formula = {
+                'nombre': td[0].find('span').string,
+                'concentracion': td[1].find('span').string,
+                'unidad': td[2].find('span').string,
+                'parte': td[3].find('span').string
+            }
+            formulas.append(formula)
+        return formulas
+
+
+class IspParser(PageParser, Thread):
+    def __init__(self, sale_terms, status, page_number=1, max_retry=3, max_wait_timeout=10, tasks=None):
+        Thread.__init__(self)
+        PageParser.__init__(self, base_url, max_retry, max_wait_timeout)
+        self.daemon = True
+        self.sale_terms = sale_terms
+        self.status = status
+        self.page_number = page_number
+        self.tasks = tasks
+
+    @classmethod
+    def from_queue(cls, tasks):
+        thread = cls(sale_terms=None, status=None, page_number=None, tasks=tasks)
+        thread.start()
+        return thread
 
     def _set_form_option(self, option):
         if option == TipoBusqueda.condicion_venta:
@@ -195,34 +253,22 @@ class IspParser(Thread):
             registro = tds[1].text.strip()
             empresa = tds[4].text.strip()
             control_legal = tds[6].text.strip()
+            parser = FichaProductoParser(product_id=registro)
+            product = parser.product()
+            product['control_legal'] = control_legal
+            product['titular'] = empresa
+            self.append_record(product)
 
-            self.cookie_jar = None
-            self.request_body = None
-            self.url = url_ficha + registro
-            self._request()
-            self._get_product_description()
-            self._get_packaging()
-            self._get_companies()
-            self._get_formula()
-
-    def _get_product_description(self):
-        product = {k.name: self.dom.find(id=k.value).string for k in FichaProducto if self.dom.find(id=k.value)}
-
-    def _get_formula(self):
-        formulas = []
-        trs = self.dom.find(id='ctl00_ContentPlaceHolder1_gvFormulas').find_all('tr')
-        for tr in trs:
-            # Se asegura de conseguir las filas que sean de formulas
-            td = tr.find_all('td', class_='tdsimple')
-            if len(td) != 4:
-                continue
-            formula = {
-                'nombre': td[0].find('span').string,
-                'concentracion': td[1].find('span').string,
-                'unidad': td[2].find('span').string,
-                'parte': td[3].find('span').string
-            }
-            formulas.append(formula)
+    def append_record(self, record):
+        """
+        Almacena un medicamento en un archivo json
+        :param record: Diccionario que contiene los datos del medicamento
+        :return:
+        """
+        with open('medicines+{0}.json'.format(self.page_number), 'a') as f:
+            import json
+            json.dump(record, f)
+            f.write('\n')
 
     def run(self):
         while True:
@@ -234,20 +280,27 @@ class IspParser(Thread):
             self.cookie_jar = None
             self.request_body = {}
             print('Procesando pagina (%s)...' % self.page_number)
-            self._connect()
-            if self.page_number != 1:
-                self.go_to_page(self.page_number)
-            self._process_page()
-            print('Pagina (%s) completada' % self.page_number)
-            self.tasks.task_done()
+            try:
+                self._connect()
+                if self.page_number != 1:
+                    self.go_to_page(self.page_number)
+                self._process_page()
+                print('Pagina (%s) completada' % self.page_number)
+            except Exception as e:
+                print(e)
+            finally:
+                self.tasks.task_done()
 
 
 def main():
-    max_threads = 1
-    thread = IspParser(sale_terms=CondicionVenta.receta_cheque, status=Estado.vigente)
+    start = time.time()
+    max_threads = 12
+    thread = IspParser(sale_terms=CondicionVenta.receta_retenida, status=Estado.vigente)
     max_pages = thread.pages_count
 
     pool = ThreadPool(max_threads)
     for i in range(1, max_pages + 1):
         pool.add_task({'sale_terms': CondicionVenta.receta_cheque, 'status': Estado.vigente, 'page_number': i})
     pool.wait_completion()
+    end = time.time()
+    print(end - start)
