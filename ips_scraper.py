@@ -35,104 +35,120 @@ class Estado(enum.Enum):
     suspendido = 'Suspendido'
 
 
-def send_request(url, cookie_jar=None, data=None):
-    if data is None:
-        data = {}
-    response = ''
-    i = 1
-    while not response and i < MAX_RETRY:
-        try:
-            session = requests.Session()
-            if not cookie_jar:
-                session.get(url)
-                cookie_jar = session.cookies.get_dict()
+class Thread:
+    def __init__(self, sale_terms, status, page_number=1, max_retry=3):
+        self.sale_terms = sale_terms
+        self.status = status
+        self.page_number = page_number
+        self.cookie_jar = None
+        self.request_body = {}
+        self.max_retry = max_retry
+        self.current_page = None
+        self.dom = None
+        self.url = 'http://registrosanitario.ispch.gob.cl/'
 
-            request = requests.Request('POST', url, data=data, cookies=cookie_jar)
-            response = session.send(request.prepare())
-        except:
-            print("Conexion rechazada por el servidor.")
-            sleep(randint(1,60))
-            print("Reintentando")
-            continue
-        i += 1
-    return response, cookie_jar
+    def _request(self):
+        self.current_page = ''
+        last_exception = None
+        i = 1
+        while not self.current_page and i < self.max_retry:
+            try:
+                session = requests.Session()
+                if not self.cookie_jar:
+                    session.get(self.url)
+                    self.cookie_jar = session.cookies.get_dict()
 
+                request = requests.Request('POST', self.url, data=self.request_body, cookies=self.cookie_jar)
+                self.current_page = session.send(request.prepare())
+            except requests.exceptions.RequestException as e:
+                last_exception = e
+                sleep(randint(1, 60))
+                continue
+            i += 1
+        if not self.current_page:
+            raise last_exception
 
-def init_request_body(dom, request_body=None):
-    if not request_body:
-        request_body = {}
+    def _set_form_option(self, option):
+        if option == TipoBusqueda.condicion_venta:
+            self.request_body['__EVENTTARGET'] = option.value
+            self.request_body[TipoBusqueda.condicion_venta.value] = 'on'
+        else:
+            self.request_body['__EVENTTARGET'] = ''
 
-    args = [
-        'ctl00_ContentPlaceHolder1_ScriptManager1_HiddenField',
-        '__EVENTTARGET',
-        '__EVENTARGUMENT',
-        '__LASTFOCUS',
-        '__VIEWSTATE',
-        '__VIEWSTATEGENERATOR',
-        '__VIEWSTATEENCRYPTED',
-        '__EVENTVALIDATION',
-    ]
-    new_body = {key: dom.find(id=key)['value'] if dom.find(id=key) else '' for key in args}
-    previous_page = dom.find(id='__PREVIOUSPAGE')
-    if previous_page:
-        new_body['__PREVIOUSPAGE'] = previous_page
-    request_body.update((k, new_body[k]) for k in new_body.keys())
-    return request_body
+    def _set_form_param(self, option, param):
+        if option == Placeholders.estado:
+            self.request_body[Placeholders.estado.value] = param.value
+        elif option == Placeholders.condicion:
+            self.request_body[Placeholders.condicion.value] = param.value
+        elif option == Placeholders.datos_busqueda:
+            self.request_body['__EVENTTARGET'] = Placeholders.datos_busqueda.value
+            self.request_body['__EVENTARGUMENT'] = param
+        else:
+            self.request_body['__EVENTARGUMENT'] = param.value
 
+    def _update_request_body(self):
+        args = [
+            'ctl00_ContentPlaceHolder1_ScriptManager1_HiddenField',
+            '__EVENTTARGET',
+            '__EVENTARGUMENT',
+            '__LASTFOCUS',
+            '__VIEWSTATE',
+            '__VIEWSTATEGENERATOR',
+            '__VIEWSTATEENCRYPTED',
+            '__EVENTVALIDATION',
+        ]
+        new_body = {key: self.dom.find(id=key)['value'] if self.dom.find(id=key) else '' for key in args}
+        previous_page = self.dom.find(id='__PREVIOUSPAGE')
+        if previous_page:
+            new_body['__PREVIOUSPAGE'] = previous_page
+        self.request_body.update((k, new_body[k]) for k in new_body.keys())
 
-def set_form_option(request_body, option):
-    if option == TipoBusqueda.condicion_venta:
-        request_body['__EVENTTARGET'] = option.value
-        request_body[TipoBusqueda.condicion_venta.value] = 'on'
-    else:
-        request_body['__EVENTTARGET'] = ''
+    def connect(self):
+        # Acceder a la url base y obtener el DOM
+        self._request()
+        self.dom = BeautifulSoup(self.current_page.content, 'lxml')
 
+        # Obtener valores necesarios para enviar el formulario
+        self._update_request_body()
 
-def set_form_param(request_body, option, param):
-    if option == Placeholders.estado:
-        request_body[Placeholders.estado.value] = param.value
-    elif option == Placeholders.condicion:
-        request_body[Placeholders.condicion.value] = param.value
-    elif option == Placeholders.datos_busqueda:
-        request_body['__EVENTTARGET'] = Placeholders.datos_busqueda.value
-        request_body['__EVENTARGUMENT'] = param.value
-    else:
-        request_body['__EVENTARGUMENT'] = param.value
+        # Marcar checkboxes con opciones de búsqueda
+        self._set_form_option(TipoBusqueda.condicion_venta)
+
+        # Obtener el DOM actualizado con las opciones de búsqueda marcadas
+        self._request()
+        self.dom = BeautifulSoup(self.current_page.content, 'lxml')
+
+        # Obtener los nuevos campos del formulario
+        self._update_request_body()
+
+        # Completar campos con los parámetros de búsqueda
+        self._set_form_param(Placeholders.estado, Estado.no_vigente)
+        self._set_form_param(Placeholders.condicion, CondicionVenta.receta_cheque)
+        self.request_body[Placeholders.buscar.value] = 'Buscar'
+
+        # Enviar la petición y obtener el DOM con los resultados
+        self._request()
+        self.dom = BeautifulSoup(self.current_page.content, 'lxml')
+
+    def go_to_page(self, page_number):
+        self.connect()
+        # Cambiar página
+        page_number = 'Page$' + str(page_number)
+        self._set_form_param(Placeholders.datos_busqueda, page_number)
+        self._request()
+        self.dom = BeautifulSoup(self.current_page.content, 'lxml')
+
+    @property
+    def pages_count(self):
+        self.connect()
+        pagination_footer = self.dom.find(id='ctl00_ContentPlaceHolder1_gvDatosBusqueda').find('td', attrs={'colspan': 7})
+        count = len(pagination_footer.find_all('td')) if pagination_footer else 1
+        return count
+
+    def process_page(self):
+        pass
 
 
 def main():
-    # Acceder a la url base y obtener el DOM
-    response, cookie_jar = send_request(base_url)
-    if not response:
-        print("El servidor no responde")
-        return
-    dom = BeautifulSoup(response.content, 'lxml')
-
-    # Obtener valores necesarios para enviar el formulario
-    request_body = init_request_body(dom)
-
-    # Marcar checkboxes con opciones de búsqueda
-    set_form_option(request_body, TipoBusqueda.condicion_venta)
-
-    # Obtener el DOM actualizado con las opciones de búsqueda marcadas
-    response, cookie_jar = send_request(base_url, cookie_jar=cookie_jar, data=request_body)
-    dom = BeautifulSoup(response.content, 'lxml')
-
-    # Obtener los nuevos campos del formulario
-    init_request_body(dom, request_body)
-
-    # Completar campos con los parámetros de búsqueda
-    set_form_param(request_body, Placeholders.estado, Estado.no_vigente)
-    set_form_param(request_body, Placeholders.condicion, CondicionVenta.receta_cheque)
-    request_body[Placeholders.buscar.value] = 'Buscar'
-
-    # Enviar la petición y obtener el DOM con los resultados
-    response, cookie_jar = send_request(base_url, cookie_jar=cookie_jar, data=request_body)
-    dom = BeautifulSoup(response.content, 'lxml')
-    pagination_footer = dom.find(id='ctl00_ContentPlaceHolder1_gvDatosBusqueda').find('td', attrs={'colspan': 7})
-    pages_count = len(pagination_footer.find_all('td')) if pagination_footer else 1
-
-
-    # Cambiar página
-    page_number = 'Page$' + str(pages_count)
-    set_form_param(request_body, Placeholders.datos_busqueda, page_number)
+    thread = Thread(sale_terms=CondicionVenta.receta_cheque, status=Estado.vigente)
+    thread.pages_count
