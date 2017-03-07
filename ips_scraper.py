@@ -10,6 +10,7 @@ from time import sleep
 base_url = 'http://registrosanitario.ispch.gob.cl/'
 url_ficha = 'http://registrosanitario.ispch.gob.cl/Ficha.aspx?RegistroISP='
 
+
 class TipoBusqueda(enum.Enum):
     condicion_venta = 'ctl00$ContentPlaceHolder1$chkTipoBusqueda$5'
 
@@ -19,20 +20,24 @@ class Placeholders(enum.Enum):
     estado = 'ctl00$ContentPlaceHolder1$ddlEstado'
     datos_busqueda = 'ctl00$ContentPlaceHolder1$gvDatosBusqueda'
     buscar = 'ctl00$ContentPlaceHolder1$btnBuscar'
+
+
+class FichaProducto(enum.Enum):
     nombre = 'ctl00_ContentPlaceHolder1_lblNombre'
     ref_tramite = 'ctl00_ContentPlaceHolder1_lblRefTramite'
-    bioequivalencia = 'ctl00_ContentPlaceHolder1_lblEquivalencia'
-    empresa = 'ctl00_ContentPlaceHolder1_lblEmpresa'
-    titular = 'ctl00_ContentPlaceHolder1_lblEstado'
-    resolution = 'ctl00_ContentPlaceHolder1_lblResInscribase'
-    date_signed = 'ctl00_ContentPlaceHolder1_lblFchInscribase'
-    last_renovation = 'ctl00_ContentPlaceHolder1_lblFchResolucion'
-    next_renewal_date = 'ctl00_ContentPlaceHolder1_lblProxRenovacion'
-    regime = 'ctl00_ContentPlaceHolder1_lblRegimen'
-    via_administration = 'ctl00_ContentPlaceHolder1_lblViaAdministracion'
-    sale_condition = 'ctl00_ContentPlaceHolder1_lblCondicionVenta'
-    expend_type = 'ctl00_ContentPlaceHolder1_lblExpende'
-    indication = 'ctl00_ContentPlaceHolder1_lblIndicacion'
+    equivalencia_terapeutica = 'ctl00_ContentPlaceHolder1_lblEquivalencia'
+    titular = 'ctl00_ContentPlaceHolder1_lblEmpresa'
+    estado = 'ctl00_ContentPlaceHolder1_lblEstado'
+    resolucion = 'ctl00_ContentPlaceHolder1_lblResInscribase'
+    fecha_inscribase = 'ctl00_ContentPlaceHolder1_lblFchInscribase'
+    ultima_renovacion = 'ctl00_ContentPlaceHolder1_lblFchResolucion'
+    proxima_renovacion = 'ctl00_ContentPlaceHolder1_lblProxRenovacion'
+    regimen = 'ctl00_ContentPlaceHolder1_lblRegimen'
+    via_administracion = 'ctl00_ContentPlaceHolder1_lblViaAdministracion'
+    condicion_venta = 'ctl00_ContentPlaceHolder1_lblCondicionVenta'
+    tipo_establecimiento = 'ctl00_ContentPlaceHolder1_lblExpende'
+    indicacion = 'ctl00_ContentPlaceHolder1_lblIndicacion'
+
 
 class CondicionVenta(enum.Enum):
     directa = 'Directa'
@@ -189,7 +194,6 @@ class IspParser(Thread):
                 continue
             registro = tds[1].text.strip()
             empresa = tds[4].text.strip()
-            principio_activo = tds[5].text.strip()
             control_legal = tds[6].text.strip()
 
             self.cookie_jar = None
@@ -197,22 +201,28 @@ class IspParser(Thread):
             self.url = url_ficha + registro
             self._request()
             self._get_product_description()
+            self._get_packaging()
+            self._get_companies()
+            self._get_formula()
 
     def _get_product_description(self):
-        name = self.dom.find(id=Placeholders.nombre.value).string
-        ref = self.dom.find(id=Placeholders.ref_tramite.value).string
-        therapeutic_equivalence = self.dom.find(id=Placeholders.bioequivalencia.value).string
-        holder = self.dom.find(id=Placeholders.empresa.value).string
-        record_status = self.dom.find(id=Placeholders.titular.value).string
-        resolution = self.dom.find(id=Placeholders.resolution.value).string
-        date_signed = self.dom.find(id=Placeholders.date_signed.value).string
-        last_renovation = self.dom.find(id=Placeholders.last_renovation.value).string
-        next_renewal_date = self.dom.find(id=Placeholders.next_renewal_date.value).string
-        regime = self.dom.find(id=Placeholders.regime.value).string
-        via_administration = self.dom.find(id=Placeholders.via_administration.value).string
-        sale_condition = self.dom.find(id=Placeholders.sale_condition.value).string
-        expend_type = self.dom.find(id=Placeholders.expend_type.value).string
-        indication = self.dom.find(id=Placeholders.indication.value)
+        product = {k.name: self.dom.find(id=k.value).string for k in FichaProducto if self.dom.find(id=k.value)}
+
+    def _get_formula(self):
+        formulas = []
+        trs = self.dom.find(id='ctl00_ContentPlaceHolder1_gvFormulas').find_all('tr')
+        for tr in trs:
+            # Se asegura de conseguir las filas que sean de formulas
+            td = tr.find_all('td', class_='tdsimple')
+            if len(td) != 4:
+                continue
+            formula = {
+                'nombre': td[0].find('span').string,
+                'concentracion': td[1].find('span').string,
+                'unidad': td[2].find('span').string,
+                'parte': td[3].find('span').string
+            }
+            formulas.append(formula)
 
     def run(self):
         while True:
