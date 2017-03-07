@@ -35,9 +35,26 @@ class Estado(enum.Enum):
     suspendido = 'Suspendido'
 
 
+class ThreadPool:
+    """ Pool of threads consuming tasks from a queue """
+    def __init__(self, num_threads):
+        self.tasks = Queue(num_threads)
+        for _ in range(num_threads):
+            IspParser.from_queue(tasks=self.tasks)
+
+    def add_task(self, task):
+        """ Add a task to the queue """
+        self.tasks.put(task)
+
+    def wait_completion(self):
+        """ Wait for completion of all the tasks in the queue """
+        self.tasks.join()
+
+
 class IspParser(Thread):
     def __init__(self, sale_terms, status, page_number=1, max_retry=3, tasks=None):
         Thread.__init__(self)
+        self.daemon = True
         self.sale_terms = sale_terms
         self.status = status
         self.page_number = page_number
@@ -56,7 +73,7 @@ class IspParser(Thread):
         return thread
 
     def _request(self):
-        self.current_page = ''
+        self.current_page = None
         last_exception = None
         i = 1
         while not self.current_page and i < self.max_retry:
@@ -130,8 +147,8 @@ class IspParser(Thread):
         self._update_request_body()
 
         # Completar campos con los parámetros de búsqueda
-        self._set_form_param(Placeholders.estado, Estado.no_vigente)
-        self._set_form_param(Placeholders.condicion, CondicionVenta.receta_cheque)
+        self._set_form_param(Placeholders.estado, self.status)
+        self._set_form_param(Placeholders.condicion, self.sale_terms)
         self.request_body[Placeholders.buscar.value] = 'Buscar'
 
         # Enviar la petición y obtener el DOM con los resultados
@@ -153,7 +170,18 @@ class IspParser(Thread):
         return count
 
     def process_page(self):
-        sleep(2)
+        # Obtiene todas las filas de la tabla
+        trs = self.dom.find(id='ctl00_ContentPlaceHolder1_gvDatosBusqueda').find_all('tr')
+        for tr in trs:
+            tds = tr.find_all('td', class_='tdsimple')
+            if len(tds) != 7:
+                continue
+            id = tds[1].text.strip()
+            company = tds[4].text.strip()
+            active_principle = tds[5].text.strip()
+            legal_control = tds[6].text.strip()
+
+
         pass
 
     def run(self):
@@ -162,39 +190,24 @@ class IspParser(Thread):
             self.page_number = task['page_number']
             self.sale_terms = task['sale_terms']
             self.status = task['status']
+            self.current_page = None
+            self.cookie_jar = None
+            self.request_body = {}
             print('Running page (%s)...this may take several minutes. Please be patient' % self.page_number)
             self._connect()
             if self.page_number != 1:
                 self.go_to_page(self.page_number)
             self.process_page()
             print('Complete (%s)' % self.page_number)
-            if self.tasks:
-                self.tasks.task_done()
-            return
+            self.tasks.task_done()
 
 
 def main():
-    max_threads = 4
+    max_threads = 1
     thread = IspParser(sale_terms=CondicionVenta.receta_cheque, status=Estado.vigente)
     max_pages = thread.pages_count
 
     pool = ThreadPool(max_threads)
-    for i in range(2, max_pages):
+    for i in range(1, max_pages + 1):
         pool.add_task({'sale_terms': CondicionVenta.receta_cheque, 'status': Estado.vigente, 'page_number': i})
     pool.wait_completion()
-
-
-class ThreadPool:
-    """ Pool of threads consuming tasks from a queue """
-    def __init__(self, num_threads):
-        self.tasks = Queue(num_threads)
-        for _ in range(num_threads):
-            IspParser.from_queue(tasks=self.tasks)
-
-    def add_task(self, task):
-        """ Add a task to the queue """
-        self.tasks.put(task)
-
-    def wait_completion(self):
-        """ Wait for completion of all the tasks in the queue """
-        self.tasks.join()
