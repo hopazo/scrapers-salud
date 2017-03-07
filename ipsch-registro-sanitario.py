@@ -1,11 +1,9 @@
 import enum
-import requests
-import time
-
-from bs4 import BeautifulSoup
-from random import randint
-from queue import Queue
+from datetime import date
 from threading import Thread
+
+from .PageParser import PageParser
+from .ThreadPool import ThreadPool
 
 base_url = 'http://registrosanitario.ispch.gob.cl/'
 url_ficha = 'http://registrosanitario.ispch.gob.cl/Ficha.aspx?RegistroISP='
@@ -50,57 +48,6 @@ class Estado(enum.Enum):
     vigente = 'Sí'
     no_vigente = 'No'
     suspendido = 'Suspendido'
-
-
-class ThreadPool:
-    """ Pool of threads consuming tasks from a queue """
-
-    def __init__(self, num_threads):
-        self.tasks = Queue(num_threads)
-        for _ in range(num_threads):
-            IspParser.from_queue(tasks=self.tasks)
-
-    def add_task(self, task):
-        """ Add a task to the queue """
-        self.tasks.put(task)
-
-    def wait_completion(self):
-        """ Wait for completion of all the tasks in the queue """
-        self.tasks.join()
-
-
-class PageParser:
-    def __init__(self, url, max_retry=3, max_wait_timeout=10):
-        self.url = url
-        self.cookie_jar = None
-        self.request_body = {}
-        self.max_retry = max_retry
-        self.current_page = None
-        self.dom = None
-        self.max_wait_timeout = max_wait_timeout
-
-    def _request(self):
-        self.current_page = None
-        self.dom = None
-        last_exception = None
-        i = 1
-        while not self.current_page and i < self.max_retry:
-            try:
-                session = requests.Session()
-                if not self.cookie_jar:
-                    session.get(self.url)
-                    self.cookie_jar = session.cookies.get_dict()
-
-                request = requests.Request('POST', self.url, data=self.request_body, cookies=self.cookie_jar)
-                self.current_page = session.send(request.prepare())
-            except requests.exceptions.RequestException as e:
-                last_exception = e
-                time.sleep(randint(1, self.max_wait_timeout))
-                continue
-            i += 1
-        if not self.current_page:
-            raise last_exception
-        self.dom = BeautifulSoup(self.current_page.content, 'lxml')
 
 
 class FichaProductoParser(PageParser):
@@ -265,7 +212,8 @@ class IspParser(PageParser, Thread):
         :param record: Diccionario que contiene los datos del medicamento
         :return:
         """
-        with open('medicines+{0}.json'.format(self.page_number), 'a') as f:
+        f = 'meds-{0}-{1}-{2}-{3}.json'.format(self.page_number, self.sale_terms.name, self.status.name, date.today())
+        with open(f, 'a') as f:
             import json
             json.dump(record, f)
             f.write('\n')
@@ -314,7 +262,7 @@ def main(condicion_venta, estado, threads):
     thread = IspParser(sale_terms=condicion_venta, status=estado)
     max_pages = thread.pages_count
 
-    pool = ThreadPool(max_threads)
+    pool = ThreadPool(max_threads, IspParser)
     for i in range(1, max_pages + 1):
         pool.add_task({'sale_terms': CondicionVenta.receta_cheque, 'status': Estado.vigente, 'page_number': i})
     pool.wait_completion()
