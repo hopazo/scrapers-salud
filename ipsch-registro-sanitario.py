@@ -1,9 +1,10 @@
 import enum
-from datetime import date
-from threading import Thread
+import threading
 
-from .PageParser import PageParser
-from .ThreadPool import ThreadPool
+from datetime import date, datetime
+from math import ceil, floor
+from PageParser import PageParser
+from ThreadPool import ThreadPool
 
 base_url = 'http://registrosanitario.ispch.gob.cl/'
 url_ficha = 'http://registrosanitario.ispch.gob.cl/Ficha.aspx?RegistroISP='
@@ -22,12 +23,12 @@ class Placeholders(enum.Enum):
 
 class FichaProducto(enum.Enum):
     nombre = 'ctl00_ContentPlaceHolder1_lblNombre'
-    ref_tramite = 'ctl00_ContentPlaceHolder1_lblRefTramite'
+    referencia_tramite = 'ctl00_ContentPlaceHolder1_lblRefTramite'
     equivalencia_terapeutica = 'ctl00_ContentPlaceHolder1_lblEquivalencia'
     titular = 'ctl00_ContentPlaceHolder1_lblEmpresa'
-    estado = 'ctl00_ContentPlaceHolder1_lblEstado'
-    resolucion = 'ctl00_ContentPlaceHolder1_lblResInscribase'
-    fecha_inscribase = 'ctl00_ContentPlaceHolder1_lblFchInscribase'
+    estado_registro = 'ctl00_ContentPlaceHolder1_lblEstado'
+    resolucion_inscripcion = 'ctl00_ContentPlaceHolder1_lblResInscribase'
+    fecha_inscripcion = 'ctl00_ContentPlaceHolder1_lblFchInscribase'
     ultima_renovacion = 'ctl00_ContentPlaceHolder1_lblFchResolucion'
     proxima_renovacion = 'ctl00_ContentPlaceHolder1_lblProxRenovacion'
     regimen = 'ctl00_ContentPlaceHolder1_lblRegimen'
@@ -51,19 +52,32 @@ class Estado(enum.Enum):
 
 
 class FichaProductoParser(PageParser):
-    def __init__(self, product_id):
+    def __init__(self, product_id, session):
         PageParser.__init__(self, url=url_ficha + product_id)
+        self.product_id = product_id
+        self.session = session
 
     def product(self):
         self._request()
-        product = self._get_product_description()
+        product_data = self._get_product_description()
         # product['packing'] = self._get_packaging()
         # product['companies'] = self._get_companies()
+        product_data['registro'] = self.product_id
+        product_data['fecha_descarga'] = date.today()
         product['formula'] = self._get_formula()
         return product
 
     def _get_product_description(self):
-        return {k.name: self.dom.find(id=k.value).string for k in FichaProducto if self.dom.find(id=k.value)}
+        description = {}
+        for k in FichaProducto:
+            node = self.dom.find(id=k.value)
+            if not node or not node.string:
+                description[k.name] = None
+            elif k.name in ['fecha_inscripcion', 'ultima_renovacion', 'proxima_renovacion']:
+                description[k.name] = datetime.strptime(node.string.strip(), "%d/%m/%Y").date()
+            else:
+                description[k.name] = node.string.strip().lower()
+        return description
 
     def _get_packaging(self):
         """
@@ -84,6 +98,7 @@ class FichaProductoParser(PageParser):
         Obtener formula (principios activos y concentración), de un producto
         :return:
         """
+        today = date.today()
         formulas = []
         trs = self.dom.find(id='ctl00_ContentPlaceHolder1_gvFormulas').find_all('tr')
         for tr in trs:
@@ -94,16 +109,24 @@ class FichaProductoParser(PageParser):
             formula = {
                 'nombre': td[0].find('span').string,
                 'concentracion': td[1].find('span').string,
-                'unidad': td[2].find('span').string,
-                'parte': td[3].find('span').string
+                'unidad_medida': td[2].find('span').string,
+                'parte': td[3].find('span').string,
+                'fecha_descarga': today,
+                'vigente': None
             }
             formulas.append(formula)
         return formulas
 
 
-class IspParser(PageParser, Thread):
+class IspParser(PageParser, threading.Thread):
+    # Cantidad máxima de resultados por página
+    RESULTS_PER_PAGE = 25
+    # Cantidad máxima de links a páginas de resultados mostradas simultaneamente
+    MAX_PAGES = 10
+    thread_data = threading.local()
+
     def __init__(self, sale_terms, status, page_number=1, max_retry=3, max_wait_timeout=10, tasks=None):
-        Thread.__init__(self)
+        threading.Thread.__init__(self)
         PageParser.__init__(self, base_url, max_retry, max_wait_timeout)
         self.daemon = True
         self.sale_terms = sale_terms
@@ -132,6 +155,10 @@ class IspParser(PageParser, Thread):
         elif option == Placeholders.datos_busqueda:
             self.request_body['__EVENTTARGET'] = Placeholders.datos_busqueda.value
             self.request_body['__EVENTARGUMENT'] = param
+            try:
+                del self.request_body[Placeholders.buscar.value]
+            except KeyError:
+                pass
         else:
             self.request_body['__EVENTARGUMENT'] = param.value
 
@@ -175,36 +202,47 @@ class IspParser(PageParser, Thread):
 
         # Enviar la petición y obtener el DOM con los resultados
         self._request()
+        self._update_request_body()
 
     def go_to_page(self, page_number):
-        # Cambiar página
-        page_number = 'Page$' + str(page_number)
-        self._set_form_param(Placeholders.datos_busqueda, page_number)
+        # Avanzar entre las páginas de resultados en intervalos de MAX_PAGES, hasta encontrar link con la página buscada
+        skip_times = int(floor(page_number/self.MAX_PAGES)) + 1
+        for i in range(1, skip_times):
+            page_arg = 'Page$' + str(i * self.MAX_PAGES + 1)
+            self._set_form_param(Placeholders.datos_busqueda, page_arg)
+            self._request()
+            self._update_request_body()
+        page_arg = 'Page$' + str(page_number)
+        self._set_form_param(Placeholders.datos_busqueda, page_arg)
         self._request()
+        self._update_request_body()
 
     @property
     def pages_count(self):
         self._connect()
-        table = self.dom.find(id='ctl00_ContentPlaceHolder1_gvDatosBusqueda')
-        pagination_footer = table.find('td', attrs={'colspan': 7})
-        count = len(pagination_footer.find_all('td')) if pagination_footer else 1
-        return count
+        total = self.dom.find(id='ctl00_ContentPlaceHolder1_lblCantidadEC').string
+        count = ceil(int(total)/self.RESULTS_PER_PAGE)
+        return int(count)
 
     def _process_page(self):
+        first_register = True
         # Obtiene todas las filas de la tabla
         trs = self.dom.find(id='ctl00_ContentPlaceHolder1_gvDatosBusqueda').find_all('tr')
+        today = date.today()
         for tr in trs:
             tds = tr.find_all('td', class_='tdsimple')
             if len(tds) != 7:
                 continue
             registro = tds[1].text.strip()
-            empresa = tds[4].text.strip()
-            control_legal = tds[6].text.strip()
-            parser = FichaProductoParser(product_id=registro)
+            if first_register:
+                print('{0} procesando página {1}, desde registro {2}'.format(self.name, self.page_number, registro))
+                first_register = false
+            parser = FichaProductoParser(product_id=registro, session=self.thread_data.scoped_session)
             product = parser.product()
-            product['control_legal'] = control_legal
-            product['titular'] = empresa
+            product.fecha_descarga = today
+            product.vigente = self.status.value
             self.append_record(product)
+
 
     def append_record(self, record):
         """
@@ -233,36 +271,43 @@ class IspParser(PageParser, Thread):
                 if self.page_number != 1:
                     self.go_to_page(self.page_number)
                 self._process_page()
-                print('Pagina (%s) completada' % self.page_number)
+                print('Página {0} completada por {1}...'.format(self.page_number, self.name))
+            except AttributeError as e:
+                print(str(e))
             except Exception as e:
-                print(e)
+                self.thread_data.scoped_session.rollback()
+                print(str(e))
             finally:
+                self.thread_data.scoped_session.close()
+                task['session'].remove()
                 self.tasks.task_done()
 
 
 def main(condicion_venta, estado, threads):
-
+    start = datetime.now()
     try:
-        condicion_venta = condicion_venta.replace('-','_')
+        condicion_venta = condicion_venta.replace('-', '_')
         estado = estado.replace('-', '_')
         condicion_venta = CondicionVenta[condicion_venta]
         estado = Estado[estado]
-        threads = int(threads)
+        max_threads = int(threads)
         print('Parámetros de búsqueda')
         print('Venta : {0}'.format(condicion_venta.value))
         print('Vigente: {0}'.format(estado.value))
     except KeyError:
         print('No fue posible determinar la condicion de venta o estado de medicamentos a procesar')
-        exit(1)
+        return 1
     except ValueError:
         print('No se proporcionó un número de hilos de ejecución válido')
-        exit(1)
+        return 1
 
-    max_threads = threads
     thread = IspParser(sale_terms=condicion_venta, status=estado)
     max_pages = thread.pages_count
 
     pool = ThreadPool(max_threads, IspParser)
     for i in range(1, max_pages + 1):
-        pool.add_task({'sale_terms': CondicionVenta.receta_cheque, 'status': Estado.vigente, 'page_number': i})
+        pool.add_task({'sale_terms': condicion_venta, 'status': estado, 'page_number': i})
     pool.wait_completion()
+    end = datetime.now()
+    print('Tiempo transcurrido: {0}'.format(end - start))
+
