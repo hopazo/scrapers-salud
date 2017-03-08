@@ -73,7 +73,11 @@ class FichaProductoParser(PageParser):
             if not node or not node.string:
                 description[k.name] = None
             elif k.name in ['fecha_inscripcion', 'ultima_renovacion', 'proxima_renovacion']:
-                description[k.name] = datetime.strptime(node.string.strip(), "%d/%m/%Y").date().strftime('%Y-%m-%d')
+                try:
+                    _d = datetime.strptime(node.string.strip(), "%d/%m/%Y").date().date().strftime('%Y-%m-%d')
+                except ValueError:
+                    _d = None
+                description[k.name] = _d
             else:
                 description[k.name] = node.string.strip().lower()
         return description
@@ -204,7 +208,7 @@ class IspParser(PageParser, threading.Thread):
     def go_to_page(self, page_number):
         # Avanzar entre las páginas de resultados en intervalos de MAX_PAGES, hasta encontrar link con la página buscada
         skip_times = int(floor(page_number/self.MAX_PAGES)) + 1
-        for i in range(1, skip_times):
+        for i in (x for x in range(1, skip_times) if x * self.MAX_PAGES + 1 != page_number):
             page_arg = 'Page$' + str(i * self.MAX_PAGES + 1)
             self._set_form_param(Placeholders.datos_busqueda, page_arg)
             self._request()
