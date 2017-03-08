@@ -1,4 +1,4 @@
-# Scraper para el [registro sanitario](http://registrosanitario.ispch.gob.cl/)
+# Scraper [Registro Sanitario ISPCh](http://registrosanitario.ispch.gob.cl/)
 Este script descarga información de los medicamentos publicados en el registro sanitario del Instituto de Salud Pública de Chile, utilizando bs4 para extraer los datos de HTML y multithreading para disminuir los tiempos de ejecución
 
 ## Instalación
@@ -26,5 +26,5 @@ python ipsch-registro-sanitario.py [--venta (directa | receta-medica | receta-ch
 * **Héctor Opazo** - [hopazo](https://github.com/hopazo)
 
 ## Creditos
-* **Álvaro Bustamante** - [Vareta](https://github.com/Vareta) por realizar la implementación funcional monohilo sin la que hubiese sido considerablemente más dificil realizar esta versión
+* *Álvaro Bustamante* - [vareta](https://github.com/Vareta) por realizar la implementación funcional monohilo sin la que hubiese sido considerablemente más dificil realizar esta versión
 * Este demo fue desarrollado a partir del trabajo realizado para [PRED SpA](http://www.pred.cl)
