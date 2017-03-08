@@ -6,7 +6,7 @@ from random import randint
 
 
 class PageParser:
-    def __init__(self, url, max_retry=3, max_wait_timeout=10):
+    def __init__(self, url, max_retry=3, max_wait_timeout=5):
         self.url = url
         self.cookie_jar = None
         self.request_body = {}
@@ -18,7 +18,6 @@ class PageParser:
     def _request(self):
         self.current_page = None
         self.dom = None
-        last_exception = None
         i = 1
         while not self.current_page and i < self.max_retry:
             try:
@@ -29,11 +28,9 @@ class PageParser:
 
                 request = requests.Request('POST', self.url, data=self.request_body, cookies=self.cookie_jar)
                 self.current_page = session.send(request.prepare())
-            except requests.exceptions.RequestException as e:
-                last_exception = e
+                i += 1
+            except requests.exceptions.ConnectionError:
                 time.sleep(randint(1, self.max_wait_timeout))
-                continue
-            i += 1
         if not self.current_page:
-            raise last_exception
+            raise ConnectionError(self.current_page)
         self.dom = BeautifulSoup(self.current_page.content, 'lxml')
