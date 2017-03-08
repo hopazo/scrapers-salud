@@ -1,3 +1,4 @@
+import argparse
 import enum
 import threading
 
@@ -52,10 +53,9 @@ class Estado(enum.Enum):
 
 
 class FichaProductoParser(PageParser):
-    def __init__(self, product_id, session):
+    def __init__(self, product_id):
         PageParser.__init__(self, url=url_ficha + product_id)
         self.product_id = product_id
-        self.session = session
 
     def product(self):
         self._request()
@@ -63,9 +63,8 @@ class FichaProductoParser(PageParser):
         # product['packing'] = self._get_packaging()
         # product['companies'] = self._get_companies()
         product_data['registro'] = self.product_id
-        product_data['fecha_descarga'] = date.today()
-        product['formula'] = self._get_formula()
-        return product
+        product_data['formula'] = self._get_formula()
+        return product_data
 
     def _get_product_description(self):
         description = {}
@@ -74,7 +73,7 @@ class FichaProductoParser(PageParser):
             if not node or not node.string:
                 description[k.name] = None
             elif k.name in ['fecha_inscripcion', 'ultima_renovacion', 'proxima_renovacion']:
-                description[k.name] = datetime.strptime(node.string.strip(), "%d/%m/%Y").date()
+                description[k.name] = datetime.strptime(node.string.strip(), "%d/%m/%Y").date().strftime('%Y-%m-%d')
             else:
                 description[k.name] = node.string.strip().lower()
         return description
@@ -98,7 +97,6 @@ class FichaProductoParser(PageParser):
         Obtener formula (principios activos y concentración), de un producto
         :return:
         """
-        today = date.today()
         formulas = []
         trs = self.dom.find(id='ctl00_ContentPlaceHolder1_gvFormulas').find_all('tr')
         for tr in trs:
@@ -111,7 +109,6 @@ class FichaProductoParser(PageParser):
                 'concentracion': td[1].find('span').string,
                 'unidad_medida': td[2].find('span').string,
                 'parte': td[3].find('span').string,
-                'fecha_descarga': today,
                 'vigente': None
             }
             formulas.append(formula)
@@ -236,11 +233,11 @@ class IspParser(PageParser, threading.Thread):
             registro = tds[1].text.strip()
             if first_register:
                 print('{0} procesando página {1}, desde registro {2}'.format(self.name, self.page_number, registro))
-                first_register = false
-            parser = FichaProductoParser(product_id=registro, session=self.thread_data.scoped_session)
+                first_register = False
+            parser = FichaProductoParser(product_id=registro)
             product = parser.product()
-            product.fecha_descarga = today
-            product.vigente = self.status.value
+            product['fecha_descarga'] = today.strftime('%Y-%m-%d')
+            product['vigente'] = self.status.value
             self.append_record(product)
 
 
@@ -250,7 +247,7 @@ class IspParser(PageParser, threading.Thread):
         :param record: Diccionario que contiene los datos del medicamento
         :return:
         """
-        f = 'meds-{0}-{1}-{2}-{3}.json'.format(self.page_number, self.sale_terms.name, self.status.name, date.today())
+        f = 'meds-{0}-{1}-{2}-{3}.json'.format(self.page_number, self.sale_terms.name, self.status.name, date.today().strftime('%Y-%m-%d'))
         with open(f, 'a') as f:
             import json
             json.dump(record, f)
@@ -265,7 +262,6 @@ class IspParser(PageParser, threading.Thread):
             self.current_page = None
             self.cookie_jar = None
             self.request_body = {}
-            print('Procesando pagina (%s)...' % self.page_number)
             try:
                 self._connect()
                 if self.page_number != 1:
@@ -275,11 +271,8 @@ class IspParser(PageParser, threading.Thread):
             except AttributeError as e:
                 print(str(e))
             except Exception as e:
-                self.thread_data.scoped_session.rollback()
                 print(str(e))
             finally:
-                self.thread_data.scoped_session.close()
-                task['session'].remove()
                 self.tasks.task_done()
 
 
@@ -311,3 +304,10 @@ def main(condicion_venta, estado, threads):
     end = datetime.now()
     print('Tiempo transcurrido: {0}'.format(end - start))
 
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Descargar medicamentos desde la web del registro sanitario de ISPCh')
+    parser.add_argument('--venta', help='Condición de venta de los medicamentos [directa|receta-medica|receta-retenida|receta-cheque]', default='directa')
+    parser.add_argument('--estado', help='Vigencia de los medicamentos [vigente|no-vigente|suspendido]', default='vigente')
+    parser.add_argument('--threads', help='Cantidad máxima de hilos de ejecución', type=int, default='4')
+    args = parser.parse_args()
+    main(args.venta, args.estado, args.threads)
