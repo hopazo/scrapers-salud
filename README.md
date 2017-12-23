@@ -22,9 +22,9 @@ python ipsch-registro-sanitario.py [--venta (directa | receta-medica | receta-ch
 4. Pushear a tu branch: `git push origin nueva-feature`
 5. Hacer un pull request :D
 
-## Authors
+## Autores
 * **Héctor Opazo** - [hopazo](https://github.com/hopazo)
 
-## Creditos
+## Créditos
 * *Álvaro Bustamante* - [vareta](https://github.com/Vareta) por realizar la implementación funcional monohilo sin la que hubiese sido considerablemente más dificil realizar esta versión
 * Este demo fue desarrollado a partir del trabajo realizado para [PRED SpA](http://www.pred.cl)
